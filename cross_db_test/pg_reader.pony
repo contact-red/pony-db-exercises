@@ -12,6 +12,7 @@ actor PgReader is (pg.SessionStatusNotify & pg.ResultReceiver)
   let _env: Env
   var _session: (pg.Session | None) = None
   var _authenticated: Bool = false
+  var _connection_failed: Bool = false
   var _ph: (PropertyHelper | None) = None
   var _scenario: (TestScenario | None) = None
   var _pending: ((_PgPending | None)) = None
@@ -24,7 +25,8 @@ actor PgReader is (pg.SessionStatusNotify & pg.ResultReceiver)
     | let ct: lori.ConnectionTimeout =>
       let server = pg.ServerConnectInfo(
         lori.TCPConnectAuth(_env.root), "127.0.0.1", "5432"
-        where connection_timeout' = ct)
+        where auth_requirement' = pg.AllowAnyAuth,
+        connection_timeout' = ct)
       let db = pg.DatabaseConnectInfo("postgres", "postgres", "postgres")
       _session = pg.Session(server, db, this)
     | let _: ValidationFailure => None
@@ -34,6 +36,12 @@ actor PgReader is (pg.SessionStatusNotify & pg.ResultReceiver)
     """
     S2: SELECT literal::type via SimpleQuery.
     """
+    if _connection_failed then
+      _ph = ph
+      _scenario = scenario
+      _fail("pg connection previously failed")
+      return
+    end
     if not _authenticated then
       _pending = _PgPending(scenario, ph, false)
       return
@@ -49,6 +57,12 @@ actor PgReader is (pg.SessionStatusNotify & pg.ResultReceiver)
     """
     S4: SELECT $1::type via PreparedQuery with typed params.
     """
+    if _connection_failed then
+      _ph = ph
+      _scenario = scenario
+      _fail("pg connection previously failed")
+      return
+    end
     if not _authenticated then
       _pending = _PgPending(scenario, ph, true)
       return
@@ -145,12 +159,14 @@ actor PgReader is (pg.SessionStatusNotify & pg.ResultReceiver)
   be pg_session_connection_failed(session: pg.Session,
     reason: pg.ConnectionFailureReason)
   =>
+    _connection_failed = true
+    match _pending
+    | let p: _PgPending =>
+      _pending = None
+      _ph = p.ph
+      _scenario = p.scenario
+    end
     _fail("pg connection failed")
-
-  be pg_session_authentication_failed(session: pg.Session,
-    reason: pg.AuthenticationFailureReason)
-  =>
-    _fail("pg authentication failed")
 
   be pg_query_result(session: pg.Session, result: pg.Result) =>
     match result

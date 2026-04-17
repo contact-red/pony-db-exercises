@@ -30,6 +30,7 @@ actor StatefulCoordinator is (pg.SessionStatusNotify & pg.ResultReceiver)
   var _odbc_conn: (Connection | None) = None
   var _pg_session: (pg.Session | None) = None
   var _pg_authenticated: Bool = false
+  var _pg_connection_failed: Bool = false
   var _table_created: Bool = false
 
   // Per-sample state
@@ -56,7 +57,8 @@ actor StatefulCoordinator is (pg.SessionStatusNotify & pg.ResultReceiver)
     | let ct: lori.ConnectionTimeout =>
       let server = pg.ServerConnectInfo(
         lori.TCPConnectAuth(_env.root), "127.0.0.1", "5432"
-        where connection_timeout' = ct)
+        where auth_requirement' = pg.AllowAnyAuth,
+        connection_timeout' = ct)
       let db = pg.DatabaseConnectInfo("postgres", "postgres", "postgres")
       _pg_session = pg.Session(server, db, this)
     | let _: ValidationFailure =>
@@ -70,6 +72,12 @@ actor StatefulCoordinator is (pg.SessionStatusNotify & pg.ResultReceiver)
     tx_mode: TxMode,
     ph: PropertyHelper)
   =>
+    if _pg_connection_failed then
+      _ph = ph
+      _scenario = scenario
+      _fail("pg connection previously failed")
+      return
+    end
     if not _pg_authenticated then
       // Queue until pg is ready
       _pending = _PendingSample(scenario, write_method, tx_mode, ph)
@@ -332,12 +340,16 @@ actor StatefulCoordinator is (pg.SessionStatusNotify & pg.ResultReceiver)
   be pg_session_connection_failed(session: pg.Session,
     reason: pg.ConnectionFailureReason)
   =>
+    _pg_connection_failed = true
+    match _pending
+    | let p: _PendingSample =>
+      _pending = None
+      _ph = p.ph
+      _scenario = p.scenario
+      _write_method = p.write_method
+      _tx_mode = p.tx_mode
+    end
     _fail("pg connection failed")
-
-  be pg_session_authentication_failed(session: pg.Session,
-    reason: pg.AuthenticationFailureReason)
-  =>
-    _fail("pg authentication failed")
 
   be pg_query_result(session: pg.Session, result: pg.Result) =>
     match _phase
