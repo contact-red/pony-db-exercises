@@ -160,11 +160,11 @@ actor StatefulCoordinator is (pg.SessionStatusNotify & pg.ResultReceiver)
         let row_id = match cursor.fetch()
         | let row: Row =>
           try
-            match row.column(ColIndex(1))?
-            | let v: SqlInt => v.value
+            match row.int(ColIndex(1))?
+            | let v: I64 => v
             else
               cursor.close()
-              _fail("INSERT RETURNING: unexpected type")
+              _fail("INSERT RETURNING: NULL id")
               return
             end
           else

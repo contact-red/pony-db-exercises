@@ -74,6 +74,8 @@ actor PgReader is (pg.SessionStatusNotify & pg.ResultReceiver)
     | let v: NvInt =>
       // Use the appropriate integer width based on the column type
       match scenario.col_type
+      | ColTinyint =>
+        recover val [as pg.FieldDataTypes: v.value.i16()] end
       | ColSmallint =>
         recover val [as pg.FieldDataTypes: v.value.i16()] end
       | ColInteger =>

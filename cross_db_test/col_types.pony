@@ -9,6 +9,7 @@ interface val ColType
   scenarios, and how to normalize results from each library.
   """
   fun pg_type_name(): String val
+  fun test_name(): String val => pg_type_name()
   fun gen_scenario(rnd: Randomness): TestScenario
   fun normalize_odbc(row: Row, col: ColIndex): NormalizedValue ?
   fun normalize_pg(fd: pg.FieldData): NormalizedValue
@@ -46,6 +47,39 @@ primitive ColBoolean is ColType
     end
 
 // ---------------------------------------------------------------------------
+// Tinyint (I8) — PostgreSQL has no tinyint; uses smallint as the column type.
+// Generator constrains values to I8 range. psqlODBC reports SQL_SMALLINT,
+// so normalize_odbc accepts both SqlTinyInt and SqlSmallInt.
+// ---------------------------------------------------------------------------
+
+primitive ColTinyint is ColType
+  fun pg_type_name(): String val => "smallint"
+  fun test_name(): String val => "tinyint"
+
+  fun gen_scenario(rnd: Randomness): TestScenario =>
+    if rnd.u8(0, 19) == 0 then
+      TestScenario(this, "NULL", NvNull)
+    else
+      let v = rnd.i8()
+      TestScenario(this, v.string(), NvInt(v.i64()))
+    end
+
+  fun normalize_odbc(row: Row, col: ColIndex): NormalizedValue ? =>
+    match row.column(col)?
+    | SqlNull => NvNull
+    | let v: SqlTinyInt => NvInt(v.value.i64())
+    | let v: SqlSmallInt => NvInt(v.value.i64())
+    else NvNull
+    end
+
+  fun normalize_pg(fd: pg.FieldData): NormalizedValue =>
+    match fd
+    | let v: I16 => NvInt(v.i64())
+    | None => NvNull
+    else NvNull
+    end
+
+// ---------------------------------------------------------------------------
 // Smallint (I16)
 // ---------------------------------------------------------------------------
 
@@ -63,7 +97,7 @@ primitive ColSmallint is ColType
   fun normalize_odbc(row: Row, col: ColIndex): NormalizedValue ? =>
     match row.column(col)?
     | SqlNull => NvNull
-    | let v: SqlInt => NvInt(v.value)
+    | let v: SqlSmallInt => NvInt(v.value.i64())
     else NvNull
     end
 
@@ -92,7 +126,7 @@ primitive ColInteger is ColType
   fun normalize_odbc(row: Row, col: ColIndex): NormalizedValue ? =>
     match row.column(col)?
     | SqlNull => NvNull
-    | let v: SqlInt => NvInt(v.value)
+    | let v: SqlInteger => NvInt(v.value.i64())
     else NvNull
     end
 
@@ -121,7 +155,7 @@ primitive ColBigint is ColType
   fun normalize_odbc(row: Row, col: ColIndex): NormalizedValue ? =>
     match row.column(col)?
     | SqlNull => NvNull
-    | let v: SqlInt => NvInt(v.value)
+    | let v: SqlBigInt => NvInt(v.value)
     else NvNull
     end
 

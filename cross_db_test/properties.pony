@@ -32,7 +32,7 @@ class iso OdbcOnlyProperty is Property1[TestScenario]
     | OdbcLiteral => "literal->odbc"
     | OdbcParam => "odbc-param->odbc"
     end
-    mode_str + "/" + _col_type.pg_type_name()
+    mode_str + "/" + _col_type.test_name()
 
   fun params(): PropertyParams =>
     PropertyParams(where num_samples' = _num_samples)
@@ -118,7 +118,14 @@ class iso OdbcOnlyProperty is Property1[TestScenario]
     match scenario.expected
     | NvNull => stmt.bind(ParamIndex(1), SqlNull)
     | let v: NvBool => stmt.bind(ParamIndex(1), SqlBool(v.value))
-    | let v: NvInt => stmt.bind(ParamIndex(1), SqlInt(v.value))
+    | let v: NvInt =>
+      match scenario.col_type
+      | ColTinyint => stmt.bind(ParamIndex(1), SqlTinyInt(v.value.i8()))
+      | ColSmallint => stmt.bind(ParamIndex(1), SqlSmallInt(v.value.i16()))
+      | ColInteger => stmt.bind(ParamIndex(1), SqlInteger(v.value.i32()))
+      else
+        stmt.bind(ParamIndex(1), SqlBigInt(v.value))
+      end
     | let v: NvFloat => stmt.bind(ParamIndex(1), SqlFloat(v.value))
     | let v: NvText => stmt.bind(ParamIndex(1), SqlText(v.value))
     | let v: NvDate =>
@@ -163,7 +170,7 @@ class iso PgOnlyProperty is Property1[TestScenario]
     | PgLiteral => "literal->pg-simple"
     | PgParam => "pg-param->pg-prepared"
     end
-    mode_str + "/" + _col_type.pg_type_name()
+    mode_str + "/" + _col_type.test_name()
 
   fun params(): PropertyParams =>
     PropertyParams(where
@@ -221,7 +228,7 @@ class iso StatefulProperty is Property1[TestScenario]
     | ExplicitCommit => "commit"
     | RollbackVerify => "rollback"
     end
-    wm + "/" + tm + "/" + _col_type.pg_type_name()
+    wm + "/" + tm + "/" + _col_type.test_name()
 
   fun params(): PropertyParams =>
     PropertyParams(where

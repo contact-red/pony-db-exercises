@@ -38,4 +38,4 @@ primitive TableName
     | PgBinaryWrite => "pbt_pgbin_"
     | PgTextWrite => "pbt_pgtxt_"
     end
-    prefix + col_type.pg_type_name().clone().>replace(" ", "_")
+    prefix + col_type.test_name().clone().>replace(" ", "_")

@@ -41,7 +41,7 @@ actor Main is TestList
     let n: USize = _EnvSamples()
 
     let col_types: Array[ColType] val = [
-      ColBoolean; ColSmallint; ColInteger; ColBigint
+      ColBoolean; ColTinyint; ColSmallint; ColInteger; ColBigint
       ColReal; ColDouble; ColText
       ColDate; ColTime; ColTimestamp
     ]
