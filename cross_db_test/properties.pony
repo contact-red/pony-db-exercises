@@ -41,7 +41,7 @@ class iso OdbcOnlyProperty is Property1[TestScenario]
     TestScenarioGenerator(_col_type)
 
   fun ref property(scenario: TestScenario, ph: PropertyHelper) ? =>
-    let conn = _ensure_conn()?
+    let conn = _ensure_conn(ph)?
     let result = match _mode
     | OdbcLiteral => _query_literal(conn, scenario)?
     | OdbcParam => _query_param(conn, scenario)?
@@ -52,7 +52,7 @@ class iso OdbcOnlyProperty is Property1[TestScenario]
         + " expected=" + NormalizedValueString(scenario.expected))
     end
 
-  fun ref _ensure_conn(): Connection ? =>
+  fun ref _ensure_conn(ph: PropertyHelper): Connection ? =>
     match _conn
     | let c: Connection => c
     else
@@ -60,7 +60,9 @@ class iso OdbcOnlyProperty is Property1[TestScenario]
       | let c: Connection =>
         _conn = c
         c
-      | let _: ConnectError => error
+      | let e: ConnectError =>
+        ph.fail("ODBC connect failed (DSN=psqlred): " + e.string())
+        error
       end
     end
 

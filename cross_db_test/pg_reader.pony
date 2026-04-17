@@ -24,7 +24,7 @@ actor PgReader is (pg.SessionStatusNotify & pg.ResultReceiver)
     match lori.MakeConnectionTimeout(5_000)
     | let ct: lori.ConnectionTimeout =>
       let server = pg.ServerConnectInfo(
-        lori.TCPConnectAuth(_env.root), "127.0.0.1", "5432"
+        lori.TCPConnectAuth(_env.root), "postgres", "5432"
         where auth_requirement' = pg.AllowAnyAuth,
         connection_timeout' = ct)
       let db = pg.DatabaseConnectInfo("postgres", "postgres", "postgres")
@@ -160,13 +160,15 @@ actor PgReader is (pg.SessionStatusNotify & pg.ResultReceiver)
     reason: pg.ConnectionFailureReason)
   =>
     _connection_failed = true
+    let reason_str = _ConnReason(reason)
+    _env.out.print("pg session (PgReader) connection FAILED: " + reason_str)
     match _pending
     | let p: _PgPending =>
       _pending = None
       _ph = p.ph
       _scenario = p.scenario
     end
-    _fail("pg connection failed")
+    _fail("pg connection failed: " + reason_str)
 
   be pg_query_result(session: pg.Session, result: pg.Result) =>
     match result

@@ -56,7 +56,7 @@ actor StatefulCoordinator is (pg.SessionStatusNotify & pg.ResultReceiver)
     match lori.MakeConnectionTimeout(5_000)
     | let ct: lori.ConnectionTimeout =>
       let server = pg.ServerConnectInfo(
-        lori.TCPConnectAuth(_env.root), "127.0.0.1", "5432"
+        lori.TCPConnectAuth(_env.root), "postgres", "5432"
         where auth_requirement' = pg.AllowAnyAuth,
         connection_timeout' = ct)
       let db = pg.DatabaseConnectInfo("postgres", "postgres", "postgres")
@@ -341,6 +341,9 @@ actor StatefulCoordinator is (pg.SessionStatusNotify & pg.ResultReceiver)
     reason: pg.ConnectionFailureReason)
   =>
     _pg_connection_failed = true
+    let reason_str = _ConnReason(reason)
+    _env.out.print(
+      "pg session (StatefulCoordinator) connection FAILED: " + reason_str)
     match _pending
     | let p: _PendingSample =>
       _pending = None
@@ -349,7 +352,7 @@ actor StatefulCoordinator is (pg.SessionStatusNotify & pg.ResultReceiver)
       _write_method = p.write_method
       _tx_mode = p.tx_mode
     end
-    _fail("pg connection failed")
+    _fail("pg connection failed: " + reason_str)
 
   be pg_query_result(session: pg.Session, result: pg.Result) =>
     match _phase
