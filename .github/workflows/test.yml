@@ -1,0 +1,38 @@
+name: Test_Harness
+
+on: [ workflow_dispatch ]
+
+concurrency:
+  group: pr-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  packages: read
+
+jobs:
+  vs-release-ponyc-linux:
+    name: Test against odbc test image
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/redvers/pony-dependency-builder:latest
+    services:
+      postgres:
+        image: postgres:14.5
+        env:
+          POSTGRES_HOST: postgres
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+          POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4.1.1
+      - name: Unit tests
+        run: make unit-tests ssl=3.0.x
