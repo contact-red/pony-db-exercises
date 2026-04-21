@@ -1,6 +1,9 @@
 name: Test_Harness
 
-on: [ workflow_dispatch ]
+on:
+  schedule:
+    - cron: '0 17 * * *'
+  workflow_dispatch:
 
 concurrency:
   group: pr-${{ github.ref }}
