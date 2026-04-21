@@ -5,7 +5,7 @@
       "locator": "github.com/ponylang/postgres.git"
     },
     {
-      "locator": "../odbc"
+      "locator": "github.com/contact-red/odbc.git"
     }
   ],
   "info": {
