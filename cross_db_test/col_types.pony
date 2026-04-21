@@ -285,6 +285,42 @@ primitive ColText is ColType
     end
 
 // ---------------------------------------------------------------------------
+// LargeText — same pg type as ColText, but generates 1 MiB–4 MiB payloads.
+// ---------------------------------------------------------------------------
+
+primitive ColLargeText is ColType
+  fun pg_type_name(): String val => "text"
+  fun test_name(): String val => "large_text"
+
+  fun gen_scenario(rnd: Randomness): TestScenario =>
+    let len = rnd.usize(1_048_576, 4_194_304)
+    let raw = recover val
+      let buf = String(len)
+      var i: USize = 0
+      while i < len do
+        buf.push(rnd.u8(0x20, 0x7E)) // printable ASCII
+        i = i + 1
+      end
+      buf
+    end
+    let escaped = recover val raw.clone().>replace("'", "''") end
+    TestScenario(this, "'" + escaped + "'", NvText(raw))
+
+  fun normalize_odbc(row: Row, col: ColIndex): NormalizedValue ? =>
+    match row.column(col)?
+    | SqlNull => NvNull
+    | let v: SqlText => NvText(v.value)
+    else NvNull
+    end
+
+  fun normalize_pg(fd: pg.FieldData): NormalizedValue =>
+    match fd
+    | let v: String => NvText(v)
+    | None => NvNull
+    else NvNull
+    end
+
+// ---------------------------------------------------------------------------
 // Date
 // ---------------------------------------------------------------------------
 

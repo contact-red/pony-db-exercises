@@ -127,6 +127,12 @@ actor Main is TestList
       ColDate; ColTime; ColTimestamp
     ]
 
+    let write_methods: Array[StatefulWriteMethod] val =
+      [OdbcWrite; PgBinaryWrite; PgTextWrite]
+
+    let data_tx_modes: Array[DataTxMode] val =
+      [Autocommit; ExplicitCommit]
+
     for ct in col_types.values() do
       // --- Stateless properties (4 per type) ---
 
@@ -148,12 +154,6 @@ actor Main is TestList
 
       // --- Stateful properties (9 per type) ---
 
-      let write_methods: Array[StatefulWriteMethod] val =
-        [OdbcWrite; PgBinaryWrite; PgTextWrite]
-
-      let data_tx_modes: Array[DataTxMode] val =
-        [Autocommit; ExplicitCommit]
-
       for wm in write_methods.values() do
         // Data properties: write once → read all three ways
         for tm in data_tx_modes.values() do
@@ -166,6 +166,54 @@ actor Main is TestList
           StatefulProperty(ct, wm, RollbackVerify, n)))
       end
     end
+
+    // --- Large-text column (1 MiB–4 MiB payloads) — TEMPORARILY DISABLED ---
+    // The matrix below (stateless + three stateful variants: full, pg-only,
+    // odbc-only) remains commented out until the large-payload driver work
+    // is resumed. Supporting types/classes (ColLargeText, PgStatefulProperty,
+    // OdbcStatefulProperty, PgStatefulCoordinator, etc.) are left in place
+    // so re-enabling is a one-block uncomment.
+    //
+    // let large_n: USize = 5
+    // let large_ct: ColType = ColLargeText
+    //
+    // test(Property1UnitTest[TestScenario](
+    //   OdbcOnlyProperty(large_ct, OdbcParam, large_n)))
+    // test(Property1UnitTest[TestScenario](
+    //   PgOnlyProperty(large_ct, PgParam, large_n)))
+    //
+    // for wm in write_methods.values() do
+    //   for tm in data_tx_modes.values() do
+    //     test(Property1UnitTest[TestScenario](
+    //       StatefulProperty(large_ct, wm, tm, large_n)))
+    //   end
+    //   test(Property1UnitTest[TestScenario](
+    //     StatefulProperty(large_ct, wm, RollbackVerify, large_n)))
+    // end
+    //
+    // let pg_write_methods: Array[PgStatefulWriteMethod] val =
+    //   [PgBinaryWrite; PgTextWrite]
+    //
+    // for wm in pg_write_methods.values() do
+    //   for tm in data_tx_modes.values() do
+    //     test(Property1UnitTest[TestScenario](
+    //       PgStatefulProperty(large_ct, wm, tm, large_n)))
+    //   end
+    //   test(Property1UnitTest[TestScenario](
+    //     PgStatefulProperty(large_ct, wm, RollbackVerify, large_n)))
+    // end
+    //
+    // let odbc_write_methods: Array[OdbcStatefulWriteMethod] val =
+    //   [OdbcWrite; OdbcParamWrite]
+    //
+    // for wm in odbc_write_methods.values() do
+    //   for tm in data_tx_modes.values() do
+    //     test(Property1UnitTest[TestScenario](
+    //       OdbcStatefulProperty(large_ct, wm, tm, large_n)))
+    //   end
+    //   test(Property1UnitTest[TestScenario](
+    //     OdbcStatefulProperty(large_ct, wm, RollbackVerify, large_n)))
+    // end
 
     // --- Normalizer unit tests ---
     test(_TestNormalizeDateString)

@@ -562,6 +562,15 @@ actor StatefulCoordinator is (pg.SessionStatusNotify & pg.ResultReceiver)
   fun ref _tick_remaining() =>
     if _remaining > 0 then _remaining = _remaining - 1 end
     if _remaining == 0 then
+      if _table_created then
+        try
+          let conn = _odbc_conn as Connection
+          let table = TableName(_write_method, _col_type)
+          match conn.exec("DROP TABLE IF EXISTS " + table)
+          | let _: ExecError => None
+          end
+        end
+      end
       match _pg_session
       | let s: pg.Session => s.close()
       end
@@ -579,6 +588,395 @@ class val _PendingSample
   new val create(
     scenario': TestScenario,
     write_method': StatefulWriteMethod,
+    tx_mode': TxMode,
+    ph': PropertyHelper)
+  =>
+    scenario = scenario'
+    write_method = write_method'
+    tx_mode = tx_mode'
+    ph = ph'
+
+// ===========================================================================
+// PgStatefulCoordinator — pg-only write/read flow (no ODBC).
+//
+// Exists so large-payload tests can verify pg's own write/read roundtrip
+// without being masked by the ODBC wrapper's truncation on large VARCHAR
+// fetches. Table creation, rollback verification, and both reads all go
+// through the pg Session.
+// ===========================================================================
+
+primitive _PgWaitingDropTable
+primitive _PgWaitingCreateTable
+primitive _PgVerifyingRollback
+primitive _PgWaitingFinalDrop
+
+type _PgPhase is
+  ( _Idle | _WaitingAuth | _PgWaitingDropTable | _PgWaitingCreateTable
+  | _WaitingBegin | _WaitingInsert | _WaitingCommit | _WaitingRollback
+  | _PgVerifyingRollback | _PgWaitingFinalDrop
+  | _ReadingPgSimple | _ReadingPgPrepared )
+
+actor PgStatefulCoordinator is (pg.SessionStatusNotify & pg.ResultReceiver)
+  let _env: Env
+  let _col_type: ColType
+  var _pg_session: (pg.Session | None) = None
+  var _pg_authenticated: Bool = false
+  var _pg_connection_failed: Bool = false
+  var _table_created: Bool = false
+
+  var _phase: _PgPhase = _WaitingAuth
+  var _ph: (PropertyHelper | None) = None
+  var _scenario: (TestScenario | None) = None
+  var _write_method: PgStatefulWriteMethod = PgBinaryWrite
+  var _tx_mode: TxMode = Autocommit
+  var _inserted_id: I64 = 0
+  var _pg_simple_result: NormalizedValue = NvNull
+
+  var _pending: ((_PgPendingSample | None)) = None
+  var _remaining: USize
+
+  new create(env: Env, col_type: ColType, num_samples: USize) =>
+    _env = env
+    _col_type = col_type
+    _remaining = num_samples
+
+    match lori.MakeConnectionTimeout(5_000)
+    | let ct: lori.ConnectionTimeout =>
+      let server = pg.ServerConnectInfo(
+        lori.TCPConnectAuth(_env.root), "postgres", "5432"
+        where auth_requirement' = pg.AllowAnyAuth,
+        connection_timeout' = ct)
+      let db = pg.DatabaseConnectInfo("postgres", "postgres", "postgres")
+      _pg_session = pg.Session(server, db, this)
+    | let _: ValidationFailure => None
+    end
+
+  be run_sample(
+    scenario: TestScenario,
+    write_method: PgStatefulWriteMethod,
+    tx_mode: TxMode,
+    ph: PropertyHelper)
+  =>
+    if _pg_connection_failed then
+      _ph = ph
+      _scenario = scenario
+      _fail("pg connection previously failed")
+      return
+    end
+    if not _pg_authenticated then
+      _pending = _PgPendingSample(scenario, write_method, tx_mode, ph)
+      return
+    end
+    _start_sample(scenario, write_method, tx_mode, ph)
+
+  fun ref _start_sample(
+    scenario: TestScenario,
+    write_method: PgStatefulWriteMethod,
+    tx_mode: TxMode,
+    ph: PropertyHelper)
+  =>
+    _ph = ph
+    _scenario = scenario
+    _write_method = write_method
+    _tx_mode = tx_mode
+    _inserted_id = 0
+    _pg_simple_result = NvNull
+
+    if not _table_created then
+      // DROP and CREATE must be separate SimpleQuery calls — a single
+      // multi-statement query returns one result per statement, which
+      // would require extra phase bookkeeping.
+      try
+        let session = _pg_session as pg.Session
+        let table = PgOnlyTableName(write_method, _col_type)
+        session.execute(pg.SimpleQuery("DROP TABLE IF EXISTS " + table), this)
+        _phase = _PgWaitingDropTable
+      end
+    else
+      _begin_write()
+    end
+
+  fun ref _begin_write() =>
+    try
+      let session = _pg_session as pg.Session
+      match _tx_mode
+      | Autocommit =>
+        let scenario = _scenario as TestScenario
+        let table = PgOnlyTableName(_write_method, _col_type)
+        session.execute(pg.SimpleQuery(scenario.insert_sql(table)), this)
+        _phase = _WaitingInsert
+      | ExplicitCommit =>
+        session.execute(pg.SimpleQuery("BEGIN"), this)
+        _phase = _WaitingBegin
+      | RollbackVerify =>
+        session.execute(pg.SimpleQuery("BEGIN"), this)
+        _phase = _WaitingBegin
+      end
+    end
+
+  // ---- pg callbacks ----
+
+  be pg_session_authenticated(session: pg.Session) =>
+    _pg_authenticated = true
+    _phase = _Idle
+    match _pending
+    | let p: _PgPendingSample =>
+      _pending = None
+      _start_sample(p.scenario, p.write_method, p.tx_mode, p.ph)
+    end
+
+  be pg_session_connection_failed(session: pg.Session,
+    reason: pg.ConnectionFailureReason)
+  =>
+    _pg_connection_failed = true
+    let reason_str = _ConnReason(reason)
+    _env.out.print(
+      "pg session (PgStatefulCoordinator) connection FAILED: " + reason_str)
+    match _pending
+    | let p: _PgPendingSample =>
+      _pending = None
+      _ph = p.ph
+      _scenario = p.scenario
+      _write_method = p.write_method
+      _tx_mode = p.tx_mode
+    end
+    _fail("pg connection failed: " + reason_str)
+
+  be pg_query_result(session: pg.Session, result: pg.Result) =>
+    match _phase
+    | _PgWaitingDropTable =>
+      let table = PgOnlyTableName(_write_method, _col_type)
+      let ddl: String val = "CREATE UNLOGGED TABLE " + table
+        + " (id BIGSERIAL PRIMARY KEY, val " + _col_type.pg_type_name() + ")"
+      session.execute(pg.SimpleQuery(ddl), this)
+      _phase = _PgWaitingCreateTable
+
+    | _PgWaitingCreateTable =>
+      _table_created = true
+      _begin_write()
+
+    | _WaitingBegin =>
+      try
+        let scenario = _scenario as TestScenario
+        let table = PgOnlyTableName(_write_method, _col_type)
+        session.execute(pg.SimpleQuery(scenario.insert_sql(table)), this)
+        _phase = _WaitingInsert
+      end
+
+    | _WaitingInsert =>
+      match result
+      | let rs: pg.ResultSet =>
+        try
+          let row = rs.rows()(0)?
+          let field = row.fields(0)?
+          match field.value
+          | let v: I64 => _inserted_id = v
+          | let v: I32 => _inserted_id = v.i64()
+          | let v: String =>
+            try _inserted_id = v.i64()?
+            else
+              _fail("pg INSERT RETURNING: can't parse id: " + v)
+              return
+            end
+          else
+            _fail("pg INSERT RETURNING: unexpected id type")
+            return
+          end
+        else
+          _fail("pg INSERT RETURNING: no fields")
+          return
+        end
+      else
+        _fail("pg INSERT: expected ResultSet from RETURNING")
+        return
+      end
+
+      match _tx_mode
+      | Autocommit => _start_reads()
+      | ExplicitCommit =>
+        session.execute(pg.SimpleQuery("COMMIT"), this)
+        _phase = _WaitingCommit
+      | RollbackVerify =>
+        session.execute(pg.SimpleQuery("ROLLBACK"), this)
+        _phase = _WaitingRollback
+      end
+
+    | _WaitingCommit => _start_reads()
+
+    | _WaitingRollback =>
+      let table = PgOnlyTableName(_write_method, _col_type)
+      let sql: String val =
+        "SELECT val FROM " + table + " WHERE id = " + _inserted_id.string()
+      session.execute(pg.SimpleQuery(sql), this)
+      _phase = _PgVerifyingRollback
+
+    | _PgVerifyingRollback =>
+      match result
+      | let rs: pg.ResultSet =>
+        if rs.rows().size() == 0 then
+          _complete()
+        else
+          _fail("Rollback failed: row still present after ROLLBACK")
+        end
+      else
+        _fail("Rollback verify: expected ResultSet")
+      end
+
+    | _ReadingPgSimple =>
+      match result
+      | let rs: pg.ResultSet =>
+        try
+          let row = rs.rows()(0)?
+          let field = row.fields(0)?
+          _pg_simple_result = _col_type.normalize_pg(field.value)
+        else
+          _fail("pg SimpleQuery read: no rows/fields")
+          return
+        end
+      else
+        _fail("pg SimpleQuery read: expected ResultSet")
+        return
+      end
+
+      let table = PgOnlyTableName(_write_method, _col_type)
+      let sql: String val = "SELECT val FROM " + table + " WHERE id = $1"
+      let params = recover val
+        [as pg.FieldDataTypes: _inserted_id]
+      end
+      session.execute(pg.PreparedQuery(sql, params), this)
+      _phase = _ReadingPgPrepared
+
+    | _ReadingPgPrepared =>
+      match result
+      | let rs: pg.ResultSet =>
+        try
+          let row = rs.rows()(0)?
+          let field = row.fields(0)?
+          let pg_prepared_result = _col_type.normalize_pg(field.value)
+          _compare(pg_prepared_result)
+        else
+          _fail("pg PreparedQuery read: no rows/fields")
+        end
+      else
+        _fail("pg PreparedQuery read: expected ResultSet")
+      end
+
+    | _PgWaitingFinalDrop => _close_session()
+    end
+
+  be pg_query_failed(session: pg.Session, query: pg.Query,
+    failure: (pg.ErrorResponseMessage | pg.ClientQueryError))
+  =>
+    if _phase is _PgWaitingFinalDrop then
+      // Final teardown — the test has already completed. Close the session
+      // and swallow the error; reporting a failure here has nowhere to go.
+      _close_session()
+      return
+    end
+    let phase_name = match _phase
+    | _PgWaitingDropTable => "DROP TABLE"
+    | _PgWaitingCreateTable => "CREATE TABLE"
+    | _WaitingBegin => "BEGIN"
+    | _WaitingInsert => "INSERT"
+    | _WaitingCommit => "COMMIT"
+    | _WaitingRollback => "ROLLBACK"
+    | _PgVerifyingRollback => "rollback verify"
+    | _ReadingPgSimple => "SimpleQuery read"
+    | _ReadingPgPrepared => "PreparedQuery read"
+    else "unknown phase"
+    end
+    let scenario_str = try (_scenario as TestScenario).string() else "?" end
+    _fail("pg " + phase_name + " failed for " + scenario_str)
+
+  fun ref _start_reads() =>
+    try
+      let session = _pg_session as pg.Session
+      let table = PgOnlyTableName(_write_method, _col_type)
+      let sql: String val =
+        "SELECT val FROM " + table + " WHERE id = " + _inserted_id.string()
+      session.execute(pg.SimpleQuery(sql), this)
+      _phase = _ReadingPgSimple
+    end
+
+  fun ref _compare(pg_prepared_result: NormalizedValue) =>
+    try
+      let scenario = _scenario as TestScenario
+
+      if not NormalizedEq(_pg_simple_result, scenario.expected) then
+        _fail(scenario.string()
+          + ": pg SimpleQuery disagrees with expected."
+          + " pg_simple=" + NormalizedValueString(_pg_simple_result)
+          + " expected=" + NormalizedValueString(scenario.expected))
+        return
+      end
+
+      if not NormalizedEq(pg_prepared_result, scenario.expected) then
+        _fail(scenario.string()
+          + ": pg PreparedQuery disagrees with expected."
+          + " pg_prepared=" + NormalizedValueString(pg_prepared_result)
+          + " expected=" + NormalizedValueString(scenario.expected))
+        return
+      end
+
+      if not NormalizedEq(_pg_simple_result, pg_prepared_result) then
+        _fail(scenario.string()
+          + ": pg SimpleQuery vs pg PreparedQuery disagree."
+          + " pg_simple=" + NormalizedValueString(_pg_simple_result)
+          + " pg_prepared=" + NormalizedValueString(pg_prepared_result))
+        return
+      end
+
+      _complete()
+    end
+
+  fun ref _fail(msg: String val) =>
+    match _ph
+    | let ph: PropertyHelper =>
+      ph.fail(msg)
+      ph.complete_action("done")
+      _ph = None
+    end
+    _phase = _Idle
+    _tick_remaining()
+
+  fun ref _complete() =>
+    match _ph
+    | let ph: PropertyHelper =>
+      ph.complete_action("done")
+      _ph = None
+    end
+    _phase = _Idle
+    _tick_remaining()
+
+  fun ref _tick_remaining() =>
+    if _remaining > 0 then _remaining = _remaining - 1 end
+    if _remaining == 0 then
+      if _table_created then
+        try
+          let session = _pg_session as pg.Session
+          let table = PgOnlyTableName(_write_method, _col_type)
+          session.execute(pg.SimpleQuery("DROP TABLE IF EXISTS " + table), this)
+          _phase = _PgWaitingFinalDrop
+          return
+        end
+      end
+      _close_session()
+    end
+
+  fun ref _close_session() =>
+    match _pg_session
+    | let s: pg.Session => s.close()
+    end
+
+class val _PgPendingSample
+  let scenario: TestScenario
+  let write_method: PgStatefulWriteMethod
+  let tx_mode: TxMode
+  let ph: PropertyHelper
+
+  new val create(
+    scenario': TestScenario,
+    write_method': PgStatefulWriteMethod,
     tx_mode': TxMode,
     ph': PropertyHelper)
   =>
