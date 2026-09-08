@@ -10,7 +10,7 @@ interface val ColType
   """
   fun pg_type_name(): String val
   fun test_name(): String val => pg_type_name()
-  fun gen_scenario(rnd: Randomness): TestScenario
+  fun gen_scenario(rnd: Randomness): TestScenario ?
   fun normalize_odbc(row: Row, col: ColIndex): NormalizedValue ?
   fun normalize_pg(fd: pg.FieldData): NormalizedValue
 
@@ -21,11 +21,11 @@ interface val ColType
 primitive ColBoolean is ColType
   fun pg_type_name(): String val => "boolean"
 
-  fun gen_scenario(rnd: Randomness): TestScenario =>
-    if rnd.u8(0, 19) == 0 then
+  fun gen_scenario(rnd: Randomness): TestScenario ? =>
+    if rnd.u8(0, 19)? == 0 then
       TestScenario(this, "NULL", NvNull)
     else
-      let v = rnd.bool()
+      let v = rnd.bool()?
       let lit = if v then "TRUE" else "FALSE" end
       TestScenario(this, lit, NvBool(v))
     end
@@ -56,11 +56,11 @@ primitive ColTinyint is ColType
   fun pg_type_name(): String val => "smallint"
   fun test_name(): String val => "tinyint"
 
-  fun gen_scenario(rnd: Randomness): TestScenario =>
-    if rnd.u8(0, 19) == 0 then
+  fun gen_scenario(rnd: Randomness): TestScenario ? =>
+    if rnd.u8(0, 19)? == 0 then
       TestScenario(this, "NULL", NvNull)
     else
-      let v = rnd.i8()
+      let v = rnd.i8()?
       TestScenario(this, v.string(), NvInt(v.i64()))
     end
 
@@ -86,11 +86,11 @@ primitive ColTinyint is ColType
 primitive ColSmallint is ColType
   fun pg_type_name(): String val => "smallint"
 
-  fun gen_scenario(rnd: Randomness): TestScenario =>
-    if rnd.u8(0, 19) == 0 then
+  fun gen_scenario(rnd: Randomness): TestScenario ? =>
+    if rnd.u8(0, 19)? == 0 then
       TestScenario(this, "NULL", NvNull)
     else
-      let v = rnd.i16()
+      let v = rnd.i16()?
       TestScenario(this, v.string(), NvInt(v.i64()))
     end
 
@@ -115,11 +115,11 @@ primitive ColSmallint is ColType
 primitive ColInteger is ColType
   fun pg_type_name(): String val => "integer"
 
-  fun gen_scenario(rnd: Randomness): TestScenario =>
-    if rnd.u8(0, 19) == 0 then
+  fun gen_scenario(rnd: Randomness): TestScenario ? =>
+    if rnd.u8(0, 19)? == 0 then
       TestScenario(this, "NULL", NvNull)
     else
-      let v = rnd.i32()
+      let v = rnd.i32()?
       TestScenario(this, v.string(), NvInt(v.i64()))
     end
 
@@ -144,11 +144,11 @@ primitive ColInteger is ColType
 primitive ColBigint is ColType
   fun pg_type_name(): String val => "bigint"
 
-  fun gen_scenario(rnd: Randomness): TestScenario =>
-    if rnd.u8(0, 19) == 0 then
+  fun gen_scenario(rnd: Randomness): TestScenario ? =>
+    if rnd.u8(0, 19)? == 0 then
       TestScenario(this, "NULL", NvNull)
     else
-      let v = rnd.i64()
+      let v = rnd.i64()?
       TestScenario(this, v.string(), NvInt(v))
     end
 
@@ -173,15 +173,15 @@ primitive ColBigint is ColType
 primitive ColReal is ColType
   fun pg_type_name(): String val => "real"
 
-  fun gen_scenario(rnd: Randomness): TestScenario =>
-    if rnd.u8(0, 19) == 0 then
+  fun gen_scenario(rnd: Randomness): TestScenario ? =>
+    if rnd.u8(0, 19)? == 0 then
       TestScenario(this, "NULL", NvNull)
     else
       // Generate F64, truncate to F32 range to avoid overflow.
       // Compute expected from the parsed literal, not the original value,
       // because F32.string() may lose precision. The database will parse the
       // literal, so expected must match what the database sees.
-      let v = rnd.f64(-1e6, 1e6).f32()
+      let v = rnd.f64(-1e6, 1e6)?.f32()
       let lit: String val = v.string()
       let expected_v = try lit.f32()? else F32(0) end
       TestScenario(this, lit, NvFloat(expected_v.f64(), FloatPrecisionF32))
@@ -215,12 +215,12 @@ primitive ColReal is ColType
 primitive ColDouble is ColType
   fun pg_type_name(): String val => "double precision"
 
-  fun gen_scenario(rnd: Randomness): TestScenario =>
-    if rnd.u8(0, 19) == 0 then
+  fun gen_scenario(rnd: Randomness): TestScenario ? =>
+    if rnd.u8(0, 19)? == 0 then
       TestScenario(this, "NULL", NvNull)
     else
       // Compute expected from the parsed literal for the same reason as ColReal.
-      let v = rnd.f64(-1e15, 1e15)
+      let v = rnd.f64(-1e15, 1e15)?
       let lit: String val = v.string()
       let expected_v = try lit.f64()? else F64(0) end
       TestScenario(this, lit, NvFloat(expected_v, FloatPrecisionF64))
@@ -251,16 +251,16 @@ primitive ColDouble is ColType
 primitive ColText is ColType
   fun pg_type_name(): String val => "text"
 
-  fun gen_scenario(rnd: Randomness): TestScenario =>
-    if rnd.u8(0, 19) == 0 then
+  fun gen_scenario(rnd: Randomness): TestScenario ? =>
+    if rnd.u8(0, 19)? == 0 then
       TestScenario(this, "NULL", NvNull)
     else
-      let len = rnd.usize(0, 100)
+      let len = rnd.usize(0, 100)?
       let raw = recover val
         let buf = String(len)
         var i: USize = 0
         while i < len do
-          buf.push(rnd.u8(0x20, 0x7E)) // printable ASCII
+          buf.push(rnd.u8(0x20, 0x7E)?) // printable ASCII
           i = i + 1
         end
         buf
@@ -292,13 +292,13 @@ primitive ColLargeText is ColType
   fun pg_type_name(): String val => "text"
   fun test_name(): String val => "large_text"
 
-  fun gen_scenario(rnd: Randomness): TestScenario =>
-    let len = rnd.usize(1_048_576, 4_194_304)
+  fun gen_scenario(rnd: Randomness): TestScenario ? =>
+    let len = rnd.usize(1_048_576, 4_194_304)?
     let raw = recover val
       let buf = String(len)
       var i: USize = 0
       while i < len do
-        buf.push(rnd.u8(0x20, 0x7E)) // printable ASCII
+        buf.push(rnd.u8(0x20, 0x7E)?) // printable ASCII
         i = i + 1
       end
       buf
@@ -327,13 +327,13 @@ primitive ColLargeText is ColType
 primitive ColDate is ColType
   fun pg_type_name(): String val => "date"
 
-  fun gen_scenario(rnd: Randomness): TestScenario =>
-    if rnd.u8(0, 19) == 0 then
+  fun gen_scenario(rnd: Randomness): TestScenario ? =>
+    if rnd.u8(0, 19)? == 0 then
       TestScenario(this, "NULL", NvNull)
     else
-      let y = rnd.i32(1, 9999)
-      let m = rnd.i32(1, 12)
-      let d = rnd.i32(1, 28) // avoid month-end edge cases
+      let y = rnd.i32(1, 9999)?
+      let m = rnd.i32(1, 12)?
+      let d = rnd.i32(1, 28)? // avoid month-end edge cases
       let lit: String val = "'" + _pad4(y) + "-" + _pad2(m) + "-" + _pad2(d) + "'"
       TestScenario(this, lit, NvDate(y, m, d))
     end
@@ -384,13 +384,13 @@ primitive ColDate is ColType
 primitive ColTime is ColType
   fun pg_type_name(): String val => "time"
 
-  fun gen_scenario(rnd: Randomness): TestScenario =>
-    if rnd.u8(0, 19) == 0 then
+  fun gen_scenario(rnd: Randomness): TestScenario ? =>
+    if rnd.u8(0, 19)? == 0 then
       TestScenario(this, "NULL", NvNull)
     else
-      let h = rnd.u16(0, 23)
-      let m = rnd.u16(0, 59)
-      let s = rnd.u16(0, 59)
+      let h = rnd.u16(0, 23)?
+      let m = rnd.u16(0, 59)?
+      let s = rnd.u16(0, 59)?
       let lit: String val = "'" + _pad2(h) + ":" + _pad2(m) + ":" + _pad2(s) + "'"
       TestScenario(this, lit, NvTime(h, m, s))
     end
@@ -436,17 +436,17 @@ primitive ColTime is ColType
 primitive ColTimestamp is ColType
   fun pg_type_name(): String val => "timestamp"
 
-  fun gen_scenario(rnd: Randomness): TestScenario =>
-    if rnd.u8(0, 19) == 0 then
+  fun gen_scenario(rnd: Randomness): TestScenario ? =>
+    if rnd.u8(0, 19)? == 0 then
       TestScenario(this, "NULL", NvNull)
     else
-      let y = rnd.i32(1, 9999)
-      let mo = rnd.i32(1, 12)
-      let d = rnd.i32(1, 28)
-      let h = rnd.u16(0, 23)
-      let mi = rnd.u16(0, 59)
-      let s = rnd.u16(0, 59)
-      let us = rnd.u32(0, 999999)
+      let y = rnd.i32(1, 9999)?
+      let mo = rnd.i32(1, 12)?
+      let d = rnd.i32(1, 28)?
+      let h = rnd.u16(0, 23)?
+      let mi = rnd.u16(0, 59)?
+      let s = rnd.u16(0, 59)?
+      let us = rnd.u32(0, 999999)?
       let lit: String val = "'" + _pad4(y) + "-" + _pad2i(mo) + "-" + _pad2i(d)
         + " " + _pad2u(h) + ":" + _pad2u(mi) + ":" + _pad2u(s)
         + _frac_str(us) + "'"

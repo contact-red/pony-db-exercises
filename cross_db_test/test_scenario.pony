@@ -36,6 +36,6 @@ primitive TestScenarioGenerator
     let ct: ColType = col_type
     Generator[TestScenario](
       object is GenObj[TestScenario]
-        fun generate(rnd: Randomness): TestScenario^ =>
-          ct.gen_scenario(rnd)
+        fun generate(rnd: Randomness): TestScenario^ ? =>
+          ct.gen_scenario(rnd)?
       end)
