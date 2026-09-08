@@ -60,7 +60,17 @@ primitive ColTinyint is ColType
     if rnd.u8(0, 19)? == 0 then
       TestScenario(this, "NULL", NvNull)
     else
-      let v = rnd.i8()?
+      let v: I8 = if rnd.u8(0, 4)? == 0 then
+        match rnd.u8(0, 4)?
+        | 0 => I8(0)
+        | 1 => I8(1)
+        | 2 => I8(-1)
+        | 3 => I8.min_value()
+        else I8.max_value()
+        end
+      else
+        rnd.i8()?
+      end
       TestScenario(this, v.string(), NvInt(v.i64()))
     end
 
@@ -90,7 +100,17 @@ primitive ColSmallint is ColType
     if rnd.u8(0, 19)? == 0 then
       TestScenario(this, "NULL", NvNull)
     else
-      let v = rnd.i16()?
+      let v: I16 = if rnd.u8(0, 4)? == 0 then
+        match rnd.u8(0, 4)?
+        | 0 => I16(0)
+        | 1 => I16(1)
+        | 2 => I16(-1)
+        | 3 => I16.min_value()
+        else I16.max_value()
+        end
+      else
+        rnd.i16()?
+      end
       TestScenario(this, v.string(), NvInt(v.i64()))
     end
 
@@ -119,7 +139,17 @@ primitive ColInteger is ColType
     if rnd.u8(0, 19)? == 0 then
       TestScenario(this, "NULL", NvNull)
     else
-      let v = rnd.i32()?
+      let v: I32 = if rnd.u8(0, 4)? == 0 then
+        match rnd.u8(0, 4)?
+        | 0 => I32(0)
+        | 1 => I32(1)
+        | 2 => I32(-1)
+        | 3 => I32.min_value()
+        else I32.max_value()
+        end
+      else
+        rnd.i32()?
+      end
       TestScenario(this, v.string(), NvInt(v.i64()))
     end
 
@@ -148,7 +178,17 @@ primitive ColBigint is ColType
     if rnd.u8(0, 19)? == 0 then
       TestScenario(this, "NULL", NvNull)
     else
-      let v = rnd.i64()?
+      let v: I64 = if rnd.u8(0, 4)? == 0 then
+        match rnd.u8(0, 4)?
+        | 0 => I64(0)
+        | 1 => I64(1)
+        | 2 => I64(-1)
+        | 3 => I64.min_value()
+        else I64.max_value()
+        end
+      else
+        rnd.i64()?
+      end
       TestScenario(this, v.string(), NvInt(v))
     end
 
@@ -181,7 +221,18 @@ primitive ColReal is ColType
       // Compute expected from the parsed literal, not the original value,
       // because F32.string() may lose precision. The database will parse the
       // literal, so expected must match what the database sees.
-      let v = rnd.f64(-1e6, 1e6)?.f32()
+      let v: F32 = if rnd.u8(0, 4)? == 0 then
+        match rnd.u8(0, 5)?
+        | 0 => F32(0)
+        | 1 => F32(1.0)
+        | 2 => F32(-1.0)
+        | 3 => F32(1.0e-7)
+        | 4 => F32(-1e6)
+        else F32(1e6)
+        end
+      else
+        rnd.f64(-1e6, 1e6)?.f32()
+      end
       let lit: String val = v.string()
       let expected_v = try lit.f32()? else F32(0) end
       TestScenario(this, lit, NvFloat(expected_v.f64(), FloatPrecisionF32))
@@ -220,7 +271,18 @@ primitive ColDouble is ColType
       TestScenario(this, "NULL", NvNull)
     else
       // Compute expected from the parsed literal for the same reason as ColReal.
-      let v = rnd.f64(-1e15, 1e15)?
+      let v: F64 = if rnd.u8(0, 4)? == 0 then
+        match rnd.u8(0, 5)?
+        | 0 => F64(0)
+        | 1 => F64(1.0)
+        | 2 => F64(-1.0)
+        | 3 => F64(1.0e-15)
+        | 4 => F64(-1e15)
+        else F64(1e15)
+        end
+      else
+        rnd.f64(-1e15, 1e15)?
+      end
       let lit: String val = v.string()
       let expected_v = try lit.f64()? else F64(0) end
       TestScenario(this, lit, NvFloat(expected_v, FloatPrecisionF64))
@@ -255,7 +317,14 @@ primitive ColText is ColType
     if rnd.u8(0, 19)? == 0 then
       TestScenario(this, "NULL", NvNull)
     else
-      let len = rnd.usize(0, 100)?
+      let len: USize = if rnd.u8(0, 4)? == 0 then
+        match rnd.u8(0, 1)?
+        | 0 => USize(0)
+        else USize(1)
+        end
+      else
+        rnd.usize(0, 100)?
+      end
       let raw = recover val
         let buf = String(len)
         var i: USize = 0
@@ -331,9 +400,33 @@ primitive ColDate is ColType
     if rnd.u8(0, 19)? == 0 then
       TestScenario(this, "NULL", NvNull)
     else
-      let y = rnd.i32(1, 9999)?
-      let m = rnd.i32(1, 12)?
-      let d = rnd.i32(1, 28)? // avoid month-end edge cases
+      var y: I32 = 0
+      var m: I32 = 0
+      var d: I32 = 0
+      if rnd.u8(0, 4)? == 0 then
+        match rnd.u8(0, 3)?
+        | 0 =>
+          y = 1
+          m = 1
+          d = 1
+        | 1 =>
+          y = 9999
+          m = 12
+          d = 28
+        | 2 =>
+          y = 2000
+          m = 1
+          d = 1
+        else
+          y = 2000
+          m = 2
+          d = 28
+        end
+      else
+        y = rnd.i32(1, 9999)?
+        m = rnd.i32(1, 12)?
+        d = rnd.i32(1, 28)?
+      end
       let lit: String val = "'" + _pad4(y) + "-" + _pad2(m) + "-" + _pad2(d) + "'"
       TestScenario(this, lit, NvDate(y, m, d))
     end
@@ -388,9 +481,20 @@ primitive ColTime is ColType
     if rnd.u8(0, 19)? == 0 then
       TestScenario(this, "NULL", NvNull)
     else
-      let h = rnd.u16(0, 23)?
-      let m = rnd.u16(0, 59)?
-      let s = rnd.u16(0, 59)?
+      var h: U16 = 0
+      var m: U16 = 0
+      var s: U16 = 0
+      if rnd.u8(0, 4)? == 0 then
+        if rnd.u8(0, 1)? != 0 then
+          h = 23
+          m = 59
+          s = 59
+        end
+      else
+        h = rnd.u16(0, 23)?
+        m = rnd.u16(0, 59)?
+        s = rnd.u16(0, 59)?
+      end
       let lit: String val = "'" + _pad2(h) + ":" + _pad2(m) + ":" + _pad2(s) + "'"
       TestScenario(this, lit, NvTime(h, m, s))
     end
@@ -440,13 +544,56 @@ primitive ColTimestamp is ColType
     if rnd.u8(0, 19)? == 0 then
       TestScenario(this, "NULL", NvNull)
     else
-      let y = rnd.i32(1, 9999)?
-      let mo = rnd.i32(1, 12)?
-      let d = rnd.i32(1, 28)?
-      let h = rnd.u16(0, 23)?
-      let mi = rnd.u16(0, 59)?
-      let s = rnd.u16(0, 59)?
-      let us = rnd.u32(0, 999999)?
+      var y: I32 = 0
+      var mo: I32 = 0
+      var d: I32 = 0
+      if rnd.u8(0, 4)? == 0 then
+        match rnd.u8(0, 3)?
+        | 0 =>
+          y = 1
+          mo = 1
+          d = 1
+        | 1 =>
+          y = 9999
+          mo = 12
+          d = 28
+        | 2 =>
+          y = 2000
+          mo = 1
+          d = 1
+        else
+          y = 2000
+          mo = 6
+          d = 15
+        end
+      else
+        y = rnd.i32(1, 9999)?
+        mo = rnd.i32(1, 12)?
+        d = rnd.i32(1, 28)?
+      end
+      var h: U16 = 0
+      var mi: U16 = 0
+      var s: U16 = 0
+      if rnd.u8(0, 4)? == 0 then
+        if rnd.u8(0, 1)? != 0 then
+          h = 23
+          mi = 59
+          s = 59
+        end
+      else
+        h = rnd.u16(0, 23)?
+        mi = rnd.u16(0, 59)?
+        s = rnd.u16(0, 59)?
+      end
+      let us: U32 = if rnd.u8(0, 4)? == 0 then
+        match rnd.u8(0, 2)?
+        | 0 => U32(0)
+        | 1 => U32(1)
+        else U32(999999)
+        end
+      else
+        rnd.u32(0, 999999)?
+      end
       let lit: String val = "'" + _pad4(y) + "-" + _pad2i(mo) + "-" + _pad2i(d)
         + " " + _pad2u(h) + ":" + _pad2u(mi) + ":" + _pad2u(s)
         + _frac_str(us) + "'"
