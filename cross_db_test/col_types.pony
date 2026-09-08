@@ -215,32 +215,35 @@ primitive ColReal is ColType
 
   fun gen_scenario(rnd: Randomness): TestScenario ? =>
     if rnd.u8(0, 19)? == 0 then
-      TestScenario(this, "NULL", NvNull)
-    else
-      // Generate F64, truncate to F32 range to avoid overflow.
-      // Compute expected from the parsed literal, not the original value,
-      // because F32.string() may lose precision. The database will parse the
-      // literal, so expected must match what the database sees.
-      let v: F32 = if rnd.u8(0, 4)? == 0 then
-        match rnd.u8(0, 5)?
-        | 0 => F32(0)
-        | 1 => F32(1.0)
-        | 2 => F32(-1.0)
-        | 3 => F32(1.0e-7)
-        | 4 => F32(-1e6)
-        else F32(1e6)
-        end
-      else
-        rnd.f64(-1e6, 1e6)?.f32()
-      end
-      let lit: String val = v.string()
-      let expected_v = try lit.f32()? else F32(0) end
-      TestScenario(this, lit, NvFloat(expected_v.f64(), FloatPrecisionF32))
+      return TestScenario(this, "NULL", NvNull)
     end
+    if rnd.u8(0, 4)? == 0 then
+      match rnd.u8(0, 8)?
+      | 0 =>
+        return TestScenario(this, "'NaN'",
+          NvFloat(F64(0) / F64(0), FloatPrecisionF32))
+      | 1 =>
+        return TestScenario(this, "'Infinity'",
+          NvFloat(F64(1) / F64(0), FloatPrecisionF32))
+      | 2 =>
+        return TestScenario(this, "'-Infinity'",
+          NvFloat(F64(-1) / F64(0), FloatPrecisionF32))
+      | 3 => return _finite_f32(F32(0))
+      | 4 => return _finite_f32(F32(1.0))
+      | 5 => return _finite_f32(F32(-1.0))
+      | 6 => return _finite_f32(F32(1.0e-7))
+      | 7 => return _finite_f32(F32(-1e6))
+      else return _finite_f32(F32(1e6))
+      end
+    end
+    _finite_f32(rnd.f64(-1e6, 1e6)?.f32())
+
+  fun _finite_f32(v: F32): TestScenario =>
+    let lit: String val = v.string()
+    let expected_v: F32 = try lit.f32()? else F32(0) end
+    TestScenario(this, lit, NvFloat(expected_v.f64(), FloatPrecisionF32))
 
   fun normalize_odbc(row: Row, col: ColIndex): NormalizedValue ? =>
-    // ODBC reads REAL as F64 via SQL_C_DOUBLE.
-    // Truncate to F32 before normalizing so both sides compare at F32 precision.
     match row.column(col)?
     | SqlNull => NvNull
     | let v: SqlFloat => NvFloat(v.value.f32().f64(), FloatPrecisionF32)
@@ -251,9 +254,14 @@ primitive ColReal is ColType
     match fd
     | let v: F32 => NvFloat(v.f64(), FloatPrecisionF32)
     | let v: String =>
-      // SimpleQuery text format: parse to F32 then promote
-      try NvFloat(v.f32()?.f64(), FloatPrecisionF32)
-      else NvNull
+      match v
+      | "NaN" => NvFloat(F64(0) / F64(0), FloatPrecisionF32)
+      | "Infinity" => NvFloat(F64(1) / F64(0), FloatPrecisionF32)
+      | "-Infinity" => NvFloat(F64(-1) / F64(0), FloatPrecisionF32)
+      else
+        try NvFloat(v.f32()?.f64(), FloatPrecisionF32)
+        else NvNull
+        end
       end
     | None => NvNull
     else NvNull
@@ -268,25 +276,33 @@ primitive ColDouble is ColType
 
   fun gen_scenario(rnd: Randomness): TestScenario ? =>
     if rnd.u8(0, 19)? == 0 then
-      TestScenario(this, "NULL", NvNull)
-    else
-      // Compute expected from the parsed literal for the same reason as ColReal.
-      let v: F64 = if rnd.u8(0, 4)? == 0 then
-        match rnd.u8(0, 5)?
-        | 0 => F64(0)
-        | 1 => F64(1.0)
-        | 2 => F64(-1.0)
-        | 3 => F64(1.0e-15)
-        | 4 => F64(-1e15)
-        else F64(1e15)
-        end
-      else
-        rnd.f64(-1e15, 1e15)?
-      end
-      let lit: String val = v.string()
-      let expected_v = try lit.f64()? else F64(0) end
-      TestScenario(this, lit, NvFloat(expected_v, FloatPrecisionF64))
+      return TestScenario(this, "NULL", NvNull)
     end
+    if rnd.u8(0, 4)? == 0 then
+      match rnd.u8(0, 8)?
+      | 0 =>
+        return TestScenario(this, "'NaN'",
+          NvFloat(F64(0) / F64(0), FloatPrecisionF64))
+      | 1 =>
+        return TestScenario(this, "'Infinity'",
+          NvFloat(F64(1) / F64(0), FloatPrecisionF64))
+      | 2 =>
+        return TestScenario(this, "'-Infinity'",
+          NvFloat(F64(-1) / F64(0), FloatPrecisionF64))
+      | 3 => return _finite_f64(F64(0))
+      | 4 => return _finite_f64(F64(1.0))
+      | 5 => return _finite_f64(F64(-1.0))
+      | 6 => return _finite_f64(F64(1.0e-15))
+      | 7 => return _finite_f64(F64(-1e15))
+      else return _finite_f64(F64(1e15))
+      end
+    end
+    _finite_f64(rnd.f64(-1e15, 1e15)?)
+
+  fun _finite_f64(v: F64): TestScenario =>
+    let lit: String val = v.string()
+    let expected_v: F64 = try lit.f64()? else F64(0) end
+    TestScenario(this, lit, NvFloat(expected_v, FloatPrecisionF64))
 
   fun normalize_odbc(row: Row, col: ColIndex): NormalizedValue ? =>
     match row.column(col)?
@@ -299,8 +315,14 @@ primitive ColDouble is ColType
     match fd
     | let v: F64 => NvFloat(v, FloatPrecisionF64)
     | let v: String =>
-      try NvFloat(v.f64()?, FloatPrecisionF64)
-      else NvNull
+      match v
+      | "NaN" => NvFloat(F64(0) / F64(0), FloatPrecisionF64)
+      | "Infinity" => NvFloat(F64(1) / F64(0), FloatPrecisionF64)
+      | "-Infinity" => NvFloat(F64(-1) / F64(0), FloatPrecisionF64)
+      else
+        try NvFloat(v.f64()?, FloatPrecisionF64)
+        else NvNull
+        end
       end
     | None => NvNull
     else NvNull
@@ -315,29 +337,36 @@ primitive ColText is ColType
 
   fun gen_scenario(rnd: Randomness): TestScenario ? =>
     if rnd.u8(0, 19)? == 0 then
-      TestScenario(this, "NULL", NvNull)
-    else
-      let len: USize = if rnd.u8(0, 4)? == 0 then
-        match rnd.u8(0, 1)?
-        | 0 => USize(0)
-        else USize(1)
-        end
-      else
-        rnd.usize(0, 100)?
-      end
-      let raw = recover val
-        let buf = String(len)
-        var i: USize = 0
-        while i < len do
-          buf.push(rnd.u8(0x20, 0x7E)?) // printable ASCII
-          i = i + 1
-        end
-        buf
-      end
-      // Escape single quotes for SQL literal
-      let escaped = recover val raw.clone().>replace("'", "''") end
-      TestScenario(this, "'" + escaped + "'", NvText(raw))
+      return TestScenario(this, "NULL", NvNull)
     end
+    if rnd.u8(0, 4)? == 0 then
+      let raw: String val = match rnd.u8(0, 7)?
+      | 0 => ""
+      | 1 => "x"
+      | 2 => "hello\nworld"
+      | 3 => "tab\there"
+      | 4 => "back\\slash"
+      | 5 => "line\r\nend"
+      | 6 => "\xC3\xA9\xC3\xA0\xC3\xBC"       // éàü (2-byte UTF-8)
+      else  "\xE2\x9C\x93\xE2\x9C\x97\xF0\x9F\x98\x80" // ✓✗😀 (3/4-byte)
+      end
+      return _text_scenario(raw)
+    end
+    let len = rnd.usize(0, 100)?
+    let raw = recover val
+      let buf = String(len)
+      var i: USize = 0
+      while i < len do
+        buf.push(rnd.u8(0x20, 0x7E)?)
+        i = i + 1
+      end
+      buf
+    end
+    _text_scenario(raw)
+
+  fun _text_scenario(raw: String val): TestScenario =>
+    let escaped = recover val raw.clone().>replace("'", "''") end
+    TestScenario(this, "'" + escaped + "'", NvText(raw))
 
   fun normalize_odbc(row: Row, col: ColIndex): NormalizedValue ? =>
     match row.column(col)?
@@ -705,4 +734,280 @@ primitive ColTimestamp is ColType
         end
       end
       full.trim(0, end_idx)
+    end
+
+// ---------------------------------------------------------------------------
+// Numeric (arbitrary precision)
+// ---------------------------------------------------------------------------
+
+primitive ColNumeric is ColType
+  fun pg_type_name(): String val => "numeric"
+
+  fun gen_scenario(rnd: Randomness): TestScenario ? =>
+    if rnd.u8(0, 19)? == 0 then
+      return TestScenario(this, "NULL", NvNull)
+    end
+    if rnd.u8(0, 4)? == 0 then
+      let v: String val = match rnd.u8(0, 7)?
+      | 0 => "0"
+      | 1 => "1"
+      | 2 => "-1"
+      | 3 => "0.001"
+      | 4 => "-999.999"
+      | 5 => "99999.99999"
+      | 6 => "NaN"
+      else "0.00"
+      end
+      return TestScenario(this, "'" + v + "'", NvText(v))
+    end
+    let int_part = rnd.i64(-99999, 99999)?
+    let frac_digits = rnd.u8(0, 5)?
+    if frac_digits == 0 then
+      let lit: String val = int_part.string()
+      TestScenario(this, lit, NvText(lit))
+    else
+      let frac = rnd.u32(0, 99999)?
+      let lit: String val = recover val
+        let buf = String
+        buf.append(int_part.string())
+        buf.push('.')
+        let fs: String val = frac.string()
+        var pad: USize = frac_digits.usize() - fs.size().min(frac_digits.usize())
+        while pad > 0 do
+          buf.push('0')
+          pad = pad - 1
+        end
+        buf.append(fs.trim(0, frac_digits.usize()))
+        buf
+      end
+      let expected = _normalize_numeric_lit(lit)
+      TestScenario(this, lit, NvText(expected))
+    end
+
+  fun _normalize_numeric_lit(lit: String val): String val =>
+    """
+    PostgreSQL normalizes numeric literals: strip leading zeros from the
+    integer part (except "0" or "-0" before a decimal), preserve trailing
+    zeros in the fractional part per the input scale. This mirrors that
+    normalization so expected matches what the database returns.
+    """
+    // Check for negative
+    let negative = try lit(0)? == '-' else false end
+    let abs_str: String val = if negative then
+      lit.trim(1)
+    else
+      lit
+    end
+
+    // Split on decimal point
+    let dot_idx = try abs_str.find(".")? else abs_str.size().isize() end
+    let int_str = abs_str.trim(0, dot_idx.usize())
+    let has_frac = dot_idx.usize() < abs_str.size()
+    let frac_str = if has_frac then
+      abs_str.trim(dot_idx.usize() + 1)
+    else
+      ""
+    end
+
+    // Strip leading zeros from integer part
+    var first_nonzero: USize = 0
+    try
+      while (first_nonzero < int_str.size()) and (int_str(first_nonzero)? == '0') do
+        first_nonzero = first_nonzero + 1
+      end
+    end
+    let norm_int: String val = if first_nonzero >= int_str.size() then
+      "0"
+    else
+      int_str.trim(first_nonzero)
+    end
+
+    let prefix: String val = if negative and (norm_int != "0") then "-"
+    elseif negative and (frac_str.size() > 0) then "-"
+    else ""
+    end
+
+    if has_frac then
+      prefix + norm_int + "." + frac_str
+    else
+      prefix + norm_int
+    end
+
+  fun normalize_odbc(row: Row, col: ColIndex): NormalizedValue ? =>
+    match row.column(col)?
+    | SqlNull => NvNull
+    | let v: SqlDecimal => NvText(v.value)
+    else NvNull
+    end
+
+  fun normalize_pg(fd: pg.FieldData): NormalizedValue =>
+    match fd
+    | let v: String => NvText(v)
+    | None => NvNull
+    else NvNull
+    end
+
+// ---------------------------------------------------------------------------
+// UUID
+// ---------------------------------------------------------------------------
+
+primitive ColUuid is ColType
+  fun pg_type_name(): String val => "uuid"
+
+  fun gen_scenario(rnd: Randomness): TestScenario ? =>
+    if rnd.u8(0, 19)? == 0 then
+      return TestScenario(this, "NULL", NvNull)
+    end
+    if rnd.u8(0, 4)? == 0 then
+      let v: String val = match rnd.u8(0, 2)?
+      | 0 => "00000000-0000-0000-0000-000000000000"
+      | 1 => "ffffffff-ffff-ffff-ffff-ffffffffffff"
+      else "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+      end
+      return TestScenario(this, "'" + v + "'", NvText(v))
+    end
+    let uuid: String val = recover val
+      let buf = String(36)
+      let hex = "0123456789abcdef"
+      var i: USize = 0
+      while i < 32 do
+        if (i == 8) or (i == 12) or (i == 16) or (i == 20) then
+          buf.push('-')
+        end
+        let nibble = rnd.u8(0, 15)?
+        try buf.push(hex(nibble.usize())?) end
+        i = i + 1
+      end
+      buf
+    end
+    TestScenario(this, "'" + uuid + "'", NvText(uuid))
+
+  fun normalize_odbc(row: Row, col: ColIndex): NormalizedValue ? =>
+    match row.column(col)?
+    | SqlNull => NvNull
+    | let v: SqlText => NvText(v.value.lower())
+    | let v: SqlRaw =>
+      if v.bytes.size() == 16 then
+        NvText(_uuid_from_bytes(v.bytes))
+      else
+        NvNull
+      end
+    else NvNull
+    end
+
+  fun normalize_pg(fd: pg.FieldData): NormalizedValue =>
+    match fd
+    | let v: String => NvText(v.lower())
+    | None => NvNull
+    else NvNull
+    end
+
+  fun _uuid_from_bytes(b: Array[U8] val): String val =>
+    """
+    ODBC SQL_GUID uses Windows GUID layout: first three groups are
+    little-endian (4-2-2 bytes reversed), last two groups are big-endian
+    (2+6 bytes in network order).
+    """
+    // Reorder to RFC 4122 (network byte order)
+    let reordered: Array[U8] val = try
+      recover val
+        [ b(3)?; b(2)?; b(1)?; b(0)?   // group 1: 4 bytes reversed
+          b(5)?; b(4)?                   // group 2: 2 bytes reversed
+          b(7)?; b(6)?                   // group 3: 2 bytes reversed
+          b(8)?; b(9)?                   // group 4: 2 bytes as-is
+          b(10)?; b(11)?; b(12)?; b(13)?; b(14)?; b(15)? ]
+      end
+    else
+      return ""
+    end
+    recover val
+      let hex = "0123456789abcdef"
+      let buf = String(36)
+      var i: USize = 0
+      try
+        while i < 16 do
+          if (i == 4) or (i == 6) or (i == 8) or (i == 10) then
+            buf.push('-')
+          end
+          buf.push(hex((reordered(i)? >> 4).usize())?)
+          buf.push(hex((reordered(i)? and 0x0F).usize())?)
+          i = i + 1
+        end
+      end
+      buf
+    end
+
+// ---------------------------------------------------------------------------
+// JSONB
+// ---------------------------------------------------------------------------
+
+primitive ColJsonb is ColType
+  fun pg_type_name(): String val => "jsonb"
+
+  fun gen_scenario(rnd: Randomness): TestScenario ? =>
+    if rnd.u8(0, 19)? == 0 then
+      return TestScenario(this, "NULL", NvNull)
+    end
+    // Generate JSON in PostgreSQL's normalized jsonb form: no extra
+    // whitespace, keys sorted. This avoids normalization mismatches.
+    if rnd.u8(0, 4)? == 0 then
+      let v: String val = match rnd.u8(0, 7)?
+      | 0 => "null"
+      | 1 => "true"
+      | 2 => "false"
+      | 3 => "42"
+      | 4 => "\"hello\""
+      | 5 => "[]"
+      | 6 => "{}"
+      else "{\"a\": 1, \"b\": 2}"
+      end
+      return _jsonb_scenario(v)
+    end
+    // Random small objects with sorted keys
+    let n_keys = rnd.u8(1, 4)?
+    let json: String val = recover val
+      let buf = String
+      buf.push('{')
+      var k: U8 = 0
+      let keys = "abcdefgh"
+      while k < n_keys do
+        if k > 0 then buf.append(", ") end
+        try
+          buf.push('"')
+          buf.push(keys(k.usize())?)
+          buf.push('"')
+        end
+        buf.append(": ")
+        let val_kind = rnd.u8(0, 3)?
+        match val_kind
+        | 0 => buf.append(rnd.i32(-999, 999)?.string())
+        | 1 => buf.append("true")
+        | 2 => buf.append("null")
+        else buf.append("\"x\"")
+        end
+        k = k + 1
+      end
+      buf.push('}')
+      buf
+    end
+    _jsonb_scenario(json)
+
+  fun _jsonb_scenario(json: String val): TestScenario =>
+    let escaped = recover val json.clone().>replace("'", "''") end
+    TestScenario(this, "'" + escaped + "'", NvText(json))
+
+  fun normalize_odbc(row: Row, col: ColIndex): NormalizedValue ? =>
+    match row.column(col)?
+    | SqlNull => NvNull
+    | let v: SqlText => NvText(v.value)
+    | let v: SqlRaw =>
+      NvText(String.from_array(v.bytes))
+    else NvNull
+    end
+
+  fun normalize_pg(fd: pg.FieldData): NormalizedValue =>
+    match fd
+    | let v: String => NvText(v)
+    | None => NvNull
+    else NvNull
     end

@@ -123,7 +123,7 @@ actor Main is TestList
 
     let col_types: Array[ColType] val = [
       ColBoolean; ColTinyint; ColSmallint; ColInteger; ColBigint
-      ColReal; ColDouble; ColText
+      ColReal; ColDouble; ColText; ColNumeric; ColUuid; ColJsonb
       ColDate; ColTime; ColTimestamp
     ]
 
@@ -151,6 +151,10 @@ actor Main is TestList
       // S4: pg param → pg PreparedQuery roundtrip
       test(Property1UnitTest[TestScenario](
         PgOnlyProperty(ct, PgParam, n)))
+
+      // S5: literal → both libraries, cross-library comparison
+      test(Property1UnitTest[TestScenario](
+        CrossLibraryProperty(ct, n)))
 
       // --- Stateful properties (9 per type) ---
 

@@ -111,6 +111,8 @@ primitive NormalizedEq
     end
 
   fun _float_eq(x: NvFloat, y: NvFloat): Bool =>
+    if x.value.nan() and y.value.nan() then return true end
+    if x.value == y.value then return true end
     let diff = (x.value - y.value).abs()
     let scale = x.value.abs().max(y.value.abs())
     let eps: F64 = match x.precision

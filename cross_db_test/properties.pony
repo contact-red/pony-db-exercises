@@ -150,6 +150,81 @@ class iso OdbcOnlyProperty is Property1[TestScenario]
     end
 
 // ===========================================================================
+// S5: SELECT literal → both ODBC and pg, cross-library comparison
+// ===========================================================================
+
+class iso CrossLibraryProperty is Property1[TestScenario]
+  let _col_type: ColType
+  let _num_samples: USize
+  var _conn: (Connection | None) = None
+  var _reader: (CrossLibraryReader | None) = None
+
+  new iso create(col_type: ColType, num_samples: USize) =>
+    _col_type = col_type
+    _num_samples = num_samples
+
+  fun name(): String =>
+    "cross/literal/" + _col_type.test_name()
+
+  fun params(): PropertyParams =>
+    PropertyParams(where
+      num_samples' = _num_samples,
+      async' = true,
+      timeout' = 120_000_000_000)
+
+  fun gen(): Generator[TestScenario] =>
+    TestScenarioGenerator(_col_type)
+
+  fun ref property(scenario: TestScenario, ph: PropertyHelper) =>
+    ph.expect_action("done")
+    let odbc_result = try
+      let conn = _ensure_conn(ph)?
+      _query_literal(conn, scenario)?
+    else
+      ph.fail("cross " + scenario.string() + ": ODBC query failed")
+      ph.complete_action("done")
+      return
+    end
+    let reader = match _reader
+    | let r: CrossLibraryReader => r
+    else
+      let r = CrossLibraryReader(ph.env, _num_samples)
+      _reader = r
+      r
+    end
+    reader.read(scenario, _CrossOdbcResult(odbc_result), ph)
+
+  fun ref _ensure_conn(ph: PropertyHelper): Connection ? =>
+    match _conn
+    | let c: Connection => c
+    else
+      match Odbc.connect(Dsn("DSN=psqlred"))
+      | let c: Connection =>
+        _conn = c
+        c
+      | let e: ConnectError =>
+        ph.fail("ODBC connect failed (DSN=psqlred): " + e.string())
+        error
+      end
+    end
+
+  fun ref _query_literal(conn: Connection, scenario: TestScenario)
+    : NormalizedValue ?
+  =>
+    match conn.query(scenario.select_sql())
+    | let cursor: Cursor =>
+      let result = match cursor.fetch()
+      | let row: Row =>
+        scenario.col_type.normalize_odbc(row, ColIndex(1))?
+      | EndOfRows => error
+      | let _: FetchError => error
+      end
+      cursor.close()
+      result
+    | let _: ExecError => error
+    end
+
+// ===========================================================================
 // S2: SELECT literal → pg SimpleQuery (async)
 // S4: SELECT $1::type → pg PreparedQuery (async)
 // ===========================================================================
