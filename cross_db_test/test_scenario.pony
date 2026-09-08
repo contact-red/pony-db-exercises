@@ -19,11 +19,11 @@ class val TestScenario is Stringable
     expected = expected'
 
   fun select_sql(): String val =>
-    "SELECT " + sql_literal + "::" + col_type.pg_type_name()
+    "SELECT (" + sql_literal + ")::" + col_type.pg_type_name()
 
   fun insert_sql(table: String val): String val =>
-    "INSERT INTO " + table + " (val) VALUES (" + sql_literal
-      + "::" + col_type.pg_type_name() + ") RETURNING id"
+    "INSERT INTO " + table + " (val) VALUES ((" + sql_literal
+      + ")::" + col_type.pg_type_name() + ") RETURNING id"
 
   fun select_by_id_sql(table: String val, id: I64): String val =>
     "SELECT val FROM " + table + " WHERE id = " + id.string()
