@@ -1,7 +1,7 @@
 use pg = "postgres"
 use "odbc"
 use "pony_check"
-use lori = "lori"
+use net = "net"
 use "constrained_types"
 
 // Phase markers for the coordinator state machine
@@ -53,10 +53,10 @@ actor StatefulCoordinator is (pg.SessionStatusNotify & pg.ResultReceiver)
     _remaining = num_samples
 
     // Create pg Session with 5-second connection timeout
-    match lori.MakeConnectionTimeout(5_000)
-    | let ct: lori.ConnectionTimeout =>
+    match net.MakeConnectionTimeout(5_000)
+    | let ct: net.ConnectionTimeout =>
       let server = pg.ServerConnectInfo(
-        lori.TCPConnectAuth(_env.root), "postgres", "5432"
+        net.TCPConnectAuth(_env.root), "postgres", "5432"
         where auth_requirement' = pg.AllowAnyAuth,
         connection_timeout' = ct)
       let db = pg.DatabaseConnectInfo("postgres", "postgres", "postgres")
@@ -640,10 +640,10 @@ actor PgStatefulCoordinator is (pg.SessionStatusNotify & pg.ResultReceiver)
     _col_type = col_type
     _remaining = num_samples
 
-    match lori.MakeConnectionTimeout(5_000)
-    | let ct: lori.ConnectionTimeout =>
+    match net.MakeConnectionTimeout(5_000)
+    | let ct: net.ConnectionTimeout =>
       let server = pg.ServerConnectInfo(
-        lori.TCPConnectAuth(_env.root), "postgres", "5432"
+        net.TCPConnectAuth(_env.root), "postgres", "5432"
         where auth_requirement' = pg.AllowAnyAuth,
         connection_timeout' = ct)
       let db = pg.DatabaseConnectInfo("postgres", "postgres", "postgres")

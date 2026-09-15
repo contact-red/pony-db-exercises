@@ -1,6 +1,6 @@
 use pg = "postgres"
 use "pony_check"
-use lori = "lori"
+use net = "net"
 use "constrained_types"
 
 class val _CrossOdbcResult
@@ -26,10 +26,10 @@ actor CrossLibraryReader is (pg.SessionStatusNotify & pg.ResultReceiver)
   new create(env: Env, num_samples: USize) =>
     _env = env
     _remaining = num_samples
-    match lori.MakeConnectionTimeout(5_000)
-    | let ct: lori.ConnectionTimeout =>
+    match net.MakeConnectionTimeout(5_000)
+    | let ct: net.ConnectionTimeout =>
       let server = pg.ServerConnectInfo(
-        lori.TCPConnectAuth(_env.root), "postgres", "5432"
+        net.TCPConnectAuth(_env.root), "postgres", "5432"
         where auth_requirement' = pg.AllowAnyAuth,
         connection_timeout' = ct)
       let db = pg.DatabaseConnectInfo("postgres", "postgres", "postgres")
