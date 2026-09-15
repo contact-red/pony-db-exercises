@@ -3,7 +3,7 @@ use "pony_check"
 use "odbc"
 use "lib:odbc"
 use pg = "postgres"
-use lori = "lori"
+use net = "net"
 use "constrained_types"
 
 use @getenv[Pointer[U8] ref](name: Pointer[U8] tag)
@@ -56,10 +56,10 @@ actor _PgStartupProbe is pg.SessionStatusNotify
 
   new create(env: Env) =>
     _env = env
-    match lori.MakeConnectionTimeout(5_000)
-    | let ct: lori.ConnectionTimeout =>
+    match net.MakeConnectionTimeout(5_000)
+    | let ct: net.ConnectionTimeout =>
       let server = pg.ServerConnectInfo(
-        lori.TCPConnectAuth(_env.root), "postgres", "5432"
+        net.TCPConnectAuth(_env.root), "postgres", "5432"
         where auth_requirement' = pg.AllowAnyAuth,
         connection_timeout' = ct)
       let db = pg.DatabaseConnectInfo("postgres", "postgres", "postgres")
