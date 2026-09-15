@@ -68,4 +68,20 @@ all: test
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-.PHONY: all examples clean TAGS test test-one
+postgres:
+	docker run --rm --name pony-db-postgres \
+		-e POSTGRES_HOST=postgres \
+		-e POSTGRES_PORT=5432 \
+		-e POSTGRES_DB=postgres \
+		-e POSTGRES_USER=postgres \
+		-e POSTGRES_PASSWORD=postgres \
+		-e POSTGRES_HOST_AUTH_METHOD=scram-sha-256 \
+		-e POSTGRES_INITDB_ARGS="--auth-host=scram-sha-256" \
+		-p 5432:5432 \
+		--health-cmd pg_isready \
+		--health-interval 10s \
+		--health-timeout 5s \
+		--health-retries 5 \
+		postgres:14.5
+
+.PHONY: all examples clean TAGS test test-one postgres
